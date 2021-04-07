@@ -1,0 +1,1088 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+---
+
+### André Campos da Silva
+### 06 de Abril, 2021
+
+## Projeto  -  Modelagem Preditiva em IoT - Previsão de Uso de Energia
+
+Este projeto de IoT tem como objetivo a criação de modelos preditivos para
+a previsão de consumo de energia de eletrodomésticos. Os dados utilizados
+incluem medições de sensores de temperatura e umidade de uma rede sem fio,
+previsão do tempo de uma estação de um aeroporto e uso de energia utilizada por
+luminárias.
+
+Cada nó sem fio transmitia as condições de temperatura e umidade em torno
+de 3 min. Em seguida, a média dos dados foi calculada para períodos de 10 minutos.
+Os dados de energia foram registrados a cada 10 minutos com medidores de
+energia de barramento m.
+
+Este Projeto visa construir um modelo preditivo que possa prever o
+consumo de energia com base nos dados de sensores IoT coletados.
+
+Dcionario dos dados 
+
+date: Tempo de coleta dos dados pelos sensores.
+
+Appliances: Uso de energia (em W).
+
+lights: Potência de energia de eletrodomésticos na casa (em W).
+
+TX: Temperatura em um lugar da casa (em Celsius).
+
+RH_X: Umidade relativa em algum ponto da casa (em %).
+
+Press_mm_hg: Não foi informado.
+
+Windspeed: Velocidade do vento (em m/s).
+
+Visibility: Visibilidade (em Km).
+
+Tdewpoint: Não foi informado.
+
+rv1: Variável randômica adicional.
+
+rv2: Variável randômica adicional.
+
+WeekStatus: Indica se é dia de semana ou final de semana.
+
+Day_of_week: Dia da semana.
+
+NSM: Medida de tempo (em s).
+
+## Carregando pacotes
+
+``` {r}
+# Instalando os pacotes
+
+#install.packages('tidyverse')
+#install.packages('caret')
+#install.packages('ROSE')
+#install.packages('data.table')
+#install.packages('gridExtra')
+#install.packages('randomForest')
+#install.packages('DMwR')
+#install.packages('e1071')
+#install.packages('rpart')
+#install.packages('caTools')
+#install.packages('kernlab')
+#install.packages('xgboost')
+
+# Carregando pacotes
+
+library('tidyverse')
+library('caret')
+library('ROSE')
+library('data.table')
+library('gridExtra')
+library('randomForest')
+library('DMwR')
+library('e1071')
+library('rpart')
+library('caTools')
+library('corrplot')
+library('kernlab')
+library('xgboost')
+```
+
+## Carregando os Dados
+
+```{r}
+# Carrego os datasets para análise. 
+
+df_train <- read_csv('Dados/projeto8-training.csv')
+df_train <- as.data.frame(df_train)
+df_test <- read_csv('Dados/projeto8-testing.csv')
+df_test <- as.data.frame(df_test)
+
+# Imprimo as primeiras linhas 
+head(df_train)
+# Imprimo as primeiras linhas 
+head(df_test)
+
+```
+
+## Análise Exploratória de Dados
+
+```{r}
+
+# Crio novas variáveis(mês,dia, hora e minuto) que farão parte da analise e seleção de variáveis.
+df_train$Month <- sapply(df_train$date, month)
+#df_train$Month <- as.factor(df_train$Month)
+
+df_train$Day <- sapply(df_train$date, mday)
+#df_train$Day <- as.factor(df_train$Day)
+
+df_train$Hour <- sapply(df_train$date,hour )
+#df_train$Hour <-as.factor(df_train$Hour)
+
+df_train$Minute <- sapply(df_train$date, minute)
+#df_train$Minu <-as.factor(df_train$Minu)
+
+# Verifico os formatos dos dados
+glimpse(df_train)
+
+# Faço um resumo dos dados
+summary(df_train)
+
+# Verifico se existe valores nulos nos dados
+sum(is.na(df_train))
+
+```
+
+### Analise em grafico de cada varável 
+
+### Funções auxiliares
+
+
+```{r}
+dist_plot <- function(data, col) {
+  
+  ggplot() +
+    geom_density(aes(data[,col]), fill = '#4271AE', colour = "#1F3552") +
+    labs(title = paste('Distribuição da variável:',col), x = col) 
+  
+}
+
+box_plot <- function(data, col, title, xlab) {
+  
+  ggplot() +
+    geom_boxplot(aes(x = data[, col]), fill = '#4271AE', colour = "#1F3552") +
+    labs(title = paste('BoxPlot da variável:',col), x = col) +
+    theme(axis.text.y = element_blank())
+}
+
+bar_plot <- function(data, col, title, xlab) {
+  
+  ggplot() +
+    geom_bar(aes(x = data[, col]), fill = '#4271AE', colour = "#1F3552") +
+    labs(title = paste('Grafico de barra da variável: ',col), x = col)
+  
+}
+
+```
+
+
+### Appliances  
+
+```{r}
+dist_plot(data = df_train, col = 'Appliances')
+
+box_plot(data = df_train,col = 'Appliances')
+```
+
+Com o distplot podemos ver uma assimetria nos dados, onde se encontram mais na parte esquerda, e com a ajuda do boxplot podemos também ver isso assim como a identificação de valores outliers que deveram ser tratados antos da aplicação dos modelos. 
+
+
+
+### lights  
+
+```{r}
+dist_plot(data = df_train, col = 'lights')
+
+box_plot(data = df_train,col = 'lights')
+```
+
+Com o distplot podemos ver uma assimetria nos dados, onde basicamente todos os valores estão próximos de 0 , e com a ajuda do boxplot podemos constatar que não possuem muitos valores outliers.
+
+
+
+
+### T1
+
+```{r}
+dist_plot(data = df_train, col = 'T1')
+
+box_plot(data = df_train,col = 'T1')
+```
+
+Com o distplot podemos ver que os dados estão quase simétricos apenas com algumas variações, e podemos ver com o boxplot outliers tanto na borda esquerda quando na direita. 
+
+
+
+### RH_1
+
+```{r}
+dist_plot(data = df_train, col = 'RH_1')
+box_plot(data = df_train,col = 'RH_1')
+```
+
+Com o distplot podemos ver que os dados estão quase simétricos apenas com algumas variações, e podemos ver com o boxplot outliers tanto na borda esquerda quando na direita. 
+
+
+### T2
+
+```{r}
+dist_plot(data = df_train, col = 'T2')
+
+box_plot(data = df_train,col = 'T2')
+```
+
+Com o distplot podemos ver que os dados um pouco mais concentrados a esquerda, porem quase simétrico, e com o boxplot constatamos alguns outliers na borda direita.  
+
+
+
+### RH_2
+
+```{r}
+dist_plot(data = df_train, col = 'RH_2')
+
+box_plot(data = df_train,col = 'RH_2')
+```
+
+Com o distplot podemos ver que os dados estão quase simétricos apenas com algumas variações, e podemos ver com o boxplot outliers tanto na borda esquerda quando na direita. 
+
+
+
+### T3
+
+```{r}
+dist_plot(data = df_train, col = 'T3')
+
+box_plot(data = df_train,col = 'T3')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e com o boxplot temos alguns outliers na borda direita.  
+
+ 
+
+
+### RH_3
+
+```{r}
+dist_plot(data = df_train, col = 'RH_3')
+
+box_plot(data = df_train,col = 'RH_3')
+```
+
+Com o distplot podemos ver que duas caudas nos dados uma um pouco mais acentuada e outra um pouco menor e com o boxplot podemos ver que existe poucos outliers   
+
+
+
+### T4
+
+```{r}
+dist_plot(data = df_train, col = 'T4')
+
+box_plot(data = df_train,col = 'T4')
+```
+
+Com o distplot podemos ver que os dados estão quase simétricos apenas com algumas variações, e podemos ver com o boxplot alguns outliers tanto na borda esquerda quando na direita. 
+
+
+### RH_4
+
+```{r}
+dist_plot(data = df_train, col = 'RH_4')
+
+box_plot(data = df_train,col = 'RH_4')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e por isso não á nenhum outliers como visto no boxplot.    
+
+
+
+### T5
+
+```{r}
+dist_plot(data = df_train, col = 'T5')
+
+box_plot(data = df_train,col = 'T5')
+```
+
+Com o distplot podemos ver que os dados estão quase simétricos e poucos outliers na borda direita como visto no boxplot.     
+
+
+
+### RH_5
+
+```{r}
+dist_plot(data = df_train, col = 'RH_5')
+
+box_plot(data = df_train,col = 'RH_5')
+```
+
+Com o distplot podemos ver que os dados  tendem um pouco a esquerda, e tempos alguns outliers como visto com o boxplot, sobretudo na boda direita.
+
+
+
+### T6
+
+```{r}
+dist_plot(data = df_train, col = 'T6')
+
+box_plot(data = df_train,col = 'T6')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e com o boxplot temos alguns outliers na borda direita.  
+
+
+
+### RH_6
+
+```{r}
+dist_plot(data = df_train, col = 'RH_6')
+
+box_plot(data = df_train,col = 'RH_6')
+```
+
+Com o distplot podemos ver que os dados estão totalmente distribuídos e nenhum outlier
+
+
+
+### T7
+
+```{r}
+dist_plot(data = df_train, col = 'T7')
+
+box_plot(data = df_train,col = 'T7')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e poucos outliers
+
+
+### RH_7
+
+```{r}
+dist_plot(data = df_train, col = 'RH_7')
+
+box_plot(data = df_train,col = 'RH_7')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e poucos outliers
+
+
+
+### T8
+
+```{r}
+dist_plot(data = df_train, col = 'T8')
+
+box_plot(data = df_train,col = 'T8')
+```
+
+Com o distplot podemos ver que os dados quase simétricos e poucos outliers na borda esquerda como podemos ver com o boxplot.
+
+
+### RH_8
+
+```{r}
+dist_plot(data = df_train, col = 'RH_8')
+
+box_plot(data = df_train,col = 'RH_8')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e poucos outliers.
+
+
+
+### T9
+
+```{r}
+dist_plot(data = df_train, col = 'T9')
+
+box_plot(data = df_train,col = 'T9')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos e nenhum outlier visto com o boxplot.
+
+
+
+### RH_9
+
+```{r}
+dist_plot(data = df_train, col = 'RH_9')
+
+box_plot(data = df_train,col = 'RH_9')
+```
+
+Com o distplot podemos ver que os dados  tendem um pouco a direita, e tempos alguns outliers como visto com o boxplot.
+
+
+
+### T_out
+
+```{r}
+dist_plot(data = df_train, col = 'T_out')
+
+box_plot(data = df_train,col = 'T_out')
+```
+
+Com o distplot podemos ver que os dados  tendem um pouco a esquerda, e tempos alguns outliers como visto com o boxplot na borda direita.
+
+
+
+### RH_out
+
+```{r}
+dist_plot(data = df_train, col = 'RH_out')
+
+box_plot(data = df_train,col = 'RH_out')
+```
+
+Com o distplot podemos ver uma assimetria nos dados, onde se encontram mais na parte direita, e com a ajuda do boxplot podemos ver outliers a na borda esquerda.
+
+
+
+### Press_mm_hg
+
+```{r}
+dist_plot(data = df_train, col = 'Press_mm_hg')
+
+box_plot(data = df_train,col = 'Press_mm_hg')
+```
+
+Com o distplot podemos ver uma assimetria nos dados, onde se encontram mais na parte direita, e com a ajuda do boxplot podemos ver outliers a na borda esquerda.
+
+
+
+### Windspeed
+
+```{r}
+dist_plot(data = df_train, col = 'Windspeed')
+
+box_plot(data = df_train,col = 'Windspeed')
+```
+
+Com o distplot podemos ver que os dados  tendem um pouco a esquerda, e tempos alguns outliers como visto com o boxplot na borda direita.
+
+
+
+### Visibility
+
+```{r}
+dist_plot(data = df_train, col = 'Visibility')
+
+box_plot(data = df_train,col = 'Visibility')
+```
+
+Com o distplot podemos ver que os dados estão bem distribuídos com uma pequena acentuação perto do valor 40 e com o boxplot temos outliers tanto na borda esquerda quanto a direita. 
+
+
+### Tdewpoint
+
+```{r}
+dist_plot(data = df_train, col = 'Tdewpoint')
+
+box_plot(data = df_train,col = 'Tdewpoint')
+```
+
+Com o distplot podemos ver que os dados quase simétricos e poucos outliers na borda esquerda como podemos ver com o boxplot.
+
+
+
+### rv1
+
+```{r}
+dist_plot(data = df_train, col = 'rv1')
+
+box_plot(data = df_train,col = 'rv1')
+```
+
+Com o distplot podemos ver que os dados estão completamente distribuídos boxplot vemos que não tem outliers.
+
+
+
+### rv2
+
+```{r}
+dist_plot(data = df_train, col = 'rv2')
+
+box_plot(data = df_train,col = 'rv2')
+```
+
+Com o distplot podemos ver que os dados estão completamente distribuídos boxplot vemos que não tem outliers.
+
+
+### NSM
+
+```{r}
+dist_plot(data = df_train, col = 'NSM')
+
+box_plot(data = df_train,col = 'NSM')
+```
+
+Com o distplot podemos ver que os dados estão completamente distribuídos boxplot vemos que não tem outliers.
+
+
+### WeekStatus
+
+```{r}
+bar_plot(df_train, 'WeekStatus')
+```
+
+Temos mais dados coletados durante a semana do que final de semana, como já esperado já que temos mais dias durante a semana e foi coletado dados em dias corridos.  
+
+
+### Day_of_week
+
+```{r}
+bar_plot(df_train, 'Day_of_week')
+```
+
+A distribuição dos dados coletados por dia está totalmente equilibrada.
+
+
+### Month
+
+```{r}
+bar_plot(df_train, 'Month')
+```
+
+A distribuição dos dados coletados por mês mostra que o mês de marco foi o que mais teve dados, e o de janeiro menos. 
+
+
+### Day
+
+```{r}
+bar_plot(df_train, 'Day')
+```
+
+Do meio para o final do mes aumenta a contabilização de dados coletados.  
+
+
+
+###  Quantidade total de energia gasta por mês
+
+```{r}
+df_train %>%
+  select(Appliances,Month)%>%
+  group_by(Month)%>%
+  summarise(sum(Appliances))
+
+df_train %>%
+  select(Appliances,Month)%>%
+  group_by(Month)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = Month, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por mês.'))
+```
+
+Fevereiro, março e abril teve o mesmo consumo total, seguidos um pouco mais baixo maio e janeiro respectivamente. 
+
+
+
+### Quantidade total de energia gasta por dia
+
+```{r}
+df_train %>%
+  select(Appliances,Day)%>%
+  group_by(Day)%>%
+  summarise(sum(Appliances))
+
+df_train %>%
+  select(Appliances,Day)%>%
+  group_by(Day)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = Day, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por mês.'))
+```
+
+Podemos notar um aumento de consumo de energia no meio do mês, entre os dias 12 a 17. 
+ 
+
+
+### Quantidade total de energia gasta separando por dia da semana e final de semana.
+
+```{r}
+df_train %>%
+  select(Appliances,WeekStatus)%>%
+  group_by(WeekStatus)%>%
+  summarise(total = sum(Appliances))
+
+df_train %>%
+  select(Appliances,WeekStatus)%>%
+  group_by(WeekStatus)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = WeekStatus, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por final de semana e semana'))
+```
+
+Como já era de se esperava o consumo total durante a semana é o dobro do final de semana.  
+
+
+
+### Quantidade total de energia gasta por dia da semana
+
+```{r}
+df_train %>%
+  select(Appliances,Day_of_week)%>%
+  group_by(Day_of_week)%>%
+  summarise(total = sum(Appliances))
+
+df_train %>%
+  select(Appliances,Day_of_week)%>%
+  group_by(Day_of_week)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = Day_of_week, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por dia da semana'))
+
+```
+
+Segunda, sexta e sábado lideram com o maior consumo, seguido dos demais dias que possuem praticamente o mesmo consumo.   
+ 
+
+
+### Quantidade total de energia gasta por hora
+
+```{r}
+df_train %>%
+  select(Appliances,Hour)%>%
+  group_by(Hour)%>%
+  summarise(total = sum(Appliances))
+
+df_train %>%
+  select(Appliances,Hour)%>%
+  group_by(Hour)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = Hour, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por Hora'))
+```
+
+A parte da noite entre 17:00 a 19:00 são os horários com maiores consumos, um indicio é o fato de a maioria das pessoas chegarem em casa por essa hora do trabalho, então com mais pessoas na cada o uso aumenta.  
+
+
+### Quantidade total de energia gasta por minuto 
+
+```{r}
+df_train %>%
+  select(Appliances,Minute)%>%
+  group_by(Minute)%>%
+  summarise(total = sum(Appliances))
+
+df_train %>%
+  select(Appliances,Minute)%>%
+  group_by(Minute)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = Minute, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por minuto'))
+```
+
+Não há diferente no uso de energia com relação os minutos que foram feitos o registro. 
+
+
+
+### Quantida total de energia gasta separando por potencia dos eletrodomesticos.
+
+```{r}
+df_train %>%
+  select(Appliances,lights)%>%
+  group_by(lights)%>%
+  summarise(total = sum(Appliances))
+
+df_train %>%
+  select(Appliances,lights)%>%
+  group_by(lights)%>%
+  summarise(total = sum(Appliances))%>%
+  ggplot()+
+  geom_bar(aes (x = lights, y= total),stat = "identity",color = "#1F3552", fill = "#4271AE") + 
+  labs( title = paste('Total de energia usado por minuto'))
+```
+
+Podemos notar que o total de consumo não está diretamente ligado com o valor da potência para cada eletrodoméstico pois o com potência com nomeação 0 no DataFrame é o que mais tem consumo.
+
+
+
+Com essas analises podemos tirar alguns insights e conhecimento sobre os dados e seus relacionamentos. 
+
+
+
+## Tratamento dos dados
+Aqui faremos alguns tratamentos nos dados, como tratamento dos outliers da target, normalização dos dados, criação de variáveis label, verificar a correlação entre as variáveis.
+
+
+```{r}
+# Converto para valor binário (0,1) onde 1 representa dias da semana e 0 dias do final de semana. 
+df_train$WeekStatus <- ifelse(df_train$WeekStatus == 'Weekend',0,1)
+
+# Função para converter o label dia da semana para numero.
+ LabelEncoder<- function(var) {
+   if( var == 'Sunday'){
+     var = 1
+   }
+   else if( var == 'Monday'){
+     var = 2
+   }
+   else if( var == 'Tuesday'){
+     var = 3
+   }
+   else if( var == 'Wednesday'){
+     var = 4
+   }
+   else if( var == 'Thursday'){
+     var = 5
+   }
+   else if( var == 'Friday'){
+     var = 6
+   }
+   else if( var == 'Saturday'){
+     var = 7
+   }
+  
+}
+# Aplico convertendo a variável. 
+df_train$Day_of_week <- sapply(df_train$Day_of_week, LabelEncoder)
+# Verifico se foi gerado algum valor nulo.
+sum(is.na(df_train))
+```
+
+
+Como vimos na analise exploratória, a variável appliances(target) possue valores outliers, e isso pode prejudiar o modelo, então iremos trata-los agora. 
+
+
+```{r}
+# Irei  restringir a target em valores menores que 0.90 quartil
+quart90 <- quantile(df_train$Appliances, probs = 0.90)
+
+# Aplico o filtro para tirar diminuir os outliers
+df_train_out_t <-df_train[df_train$Appliances<=quart90[[1]],]
+
+# Plot do mesmo grafico vis antes agora com menos outliers
+box_plot(data = df_train_out_t,col = "Appliances")
+
+#sumario estatisco da target agora tratada. 
+summary(df_train_out_t["Appliances"])
+
+# Retiro a variável date
+df_train_out_t$date <- NULL
+```
+
+## Normalização dos dados
+ 
+```{r}
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+# Crio um DataFrame so das variáveis normalizadas
+names(df_train_out_t[,1:29])
+data_norm <- as.data.frame(sapply(df_train_out_t[,1:29], normalize))
+```
+```{r}
+# Correlação das variáveis
+correlacao <- cor(data_norm)
+correlacao[1,]
+corrplot(correlacao,  method = 'square')
+```
+
+
+## Feature Selection (Seleção de Variáveis)
+
+Usarei o modelo randomForest e para seleção das melhores variáveis. 
+
+```{r}
+
+bets_var_RF <- randomForest(Appliances  ~ . ,data = data_norm, 
+                            ntree = 100, nodesize = 10, importance = T)
+
+varImpPlot(bets_var_RF)
+
+```
+
+Analisando as importâncias para o  modelo e juntamente com a correlação separei as variáveis abaixo para o treinamento dos modelos.
+
+
+
+
+```{r}
+# Crio o vetor com as variáveis mais importantes para filtragem na criação do novo DataFrame. 
+best_var <- c('Appliances','T2','NSM','lights', 'RH_6','RH_out','Tdewpoint')
+
+# Crio o DataFrame final que sera usado nos modelos preditivos.
+train_pred <- data_norm[best_var]
+head(train_pred)
+```
+
+
+
+## Split dos dados
+
+
+```{r}
+# Faço uma divisão de 80/20 para dados de treino e teste. 
+split = sample.split(train_pred$lights, SplitRatio = 0.80)
+train = subset(train_pred, split == TRUE)
+test = subset(train_pred, split == FALSE)
+
+# imprimo as Dimensões
+dim(train)
+dim(test)
+```
+
+
+
+## Algoritmos de aprendizagem ( Regressão ) 
+
+
+
+```{r}
+# Modelo svm do pacote library(e1071)
+# ?svm
+
+modelo_svm <- svm(Appliances ~ .
+                 ,data= train,type = 'eps-regression',kernel = 'radial',
+                 cost = 10, scale = FALSE,gamma = 0.1)
+previsao_svm <- predict(modelo_svm, test)
+
+
+# Accuracy
+mae = MAE(test$Appliances,previsao_svm)
+rmse = RMSE(test$Appliances,previsao_svm)
+r2 = R2(test$Appliances,previsao_svm)
+
+cat(" MAE:", mae, "\n", 
+    "RMSE:", rmse, "\n", "R-squared:", r2)
+```
+
+
+```{r}
+#  Modelo com o randomForest
+# ?randomForest
+
+modelo_RF <- randomForest(Appliances ~ .
+                  ,data= train,ntree = 60, 
+                  nodesize = 5)
+previsao_RF <- predict(modelo_RF, test)
+
+# Accuracy
+mae = MAE(test$Appliances,previsao_RF)
+rmse = RMSE(test$Appliances,previsao_RF)
+r2 = R2(test$Appliances,previsao_RF)
+
+cat(" MAE:", mae, "\n", 
+    "RMSE:", rmse, "\n", "R-squared:", r2)
+```
+
+
+```{r}
+#  Modelo com o xgboost
+# Para o modelo tenho que converter o DF para uma matrix.
+trainxb <- as.matrix(train[2:6])
+trainl <- as.matrix(train[1])
+testxm <- as.matrix(test[2:6])
+testl <- as.matrix(test[1])
+# ?xgboost
+modelo_XB <- xgboost(data = trainxb, 
+                     label = trainl , 
+                     max.depth = 2, 
+                     eta = 1, 
+                     nthread = 2, 
+                     nround = 2
+                     )
+
+previsao_XB <- predict(modelo_XB,testxm)
+
+# Accuracy
+mae = MAE(testl,previsao_XB)
+rmse = RMSE(testl,previsao_XB)
+r2= R2(testl,previsao_XB)
+
+cat(" MAE:", mae, "\n", 
+    "RMSE:", rmse, "\n", "R-squared:", r2)
+```
+
+Como podemos notar para um problema de regressão não tivemos uma boa acurácia, isso pode ser por conta dos poucos dados para treinamento, não permitindo que o modelo aprender o suficiente como também as várias colinearidades entre as variáveis que prejudicam os modelos, embora eu tenha separado as que possuem menos colinearidades possível entre elas.
+
+
+## Algoritmos de aprendizagem ( Classificação )
+
+Como foi dito acima, pelos motivos citados e entre outros a regressão não ficou interessante para o projeto nesse panorama, então tentarei agora uma outra abordagem, onde eu irei transformar esse projeto de regressão em um de classificação, criando variáveis target baseados no valor do uso de energia e veremos se assim teremos uma melhor performance. 
+
+Criarei 4 variáveis target, com critérios que eu determinarei da seguinte forma: uso de energia baixo de 60 eu considerarei como variável 1 (baixo), acima de 60 até 100  como variável 2 (médio), acima de 100 até 500 como variável 3 (alto), e o que for acima de 500 como variável 4 ( muito alto.  
+
+Irei carrega dos dados novamente e realizar todo o tratamento feito para que não corra risco de ter algum erro. 
+
+
+```{r}
+# Carregano os dados
+df_train <- read_csv('Dados/projeto8-training.csv')
+df_train <- as.data.frame(df_train)
+df_test <- read_csv('Dados/projeto8-testing.csv')
+df_test <- as.data.frame(df_test)
+
+# Criando variáveis (mês,dia, hora e minuto) 
+# df_train
+df_train$Month <- sapply(df_train$date, month)
+df_train$Day <- sapply(df_train$date, mday)
+df_train$Hour <- sapply(df_train$date,hour)
+df_train$Minute <- sapply(df_train$date, minute)
+# df_test
+df_test$Month <- sapply(df_test$date, month)
+df_test$Day <- sapply(df_test$date, mday)
+df_test$Hour <- sapply(df_test$date,hour)
+df_test$Minute <- sapply(df_test$date, minute)
+```
+
+```{r}
+# Converto para valor binário (0,1) onde 1 representa dias da semana e 0 dias do final de semana. 
+df_train$WeekStatus <- ifelse(df_train$WeekStatus == 'Weekend',0,1)
+df_test$WeekStatus <- ifelse(df_test$WeekStatus == 'Weekend',0,1)
+
+# Coverto as variáveis dias da semana. 
+df_train$Day_of_week <- sapply(df_train$Day_of_week, LabelEncoder)
+df_test$Day_of_week <- sapply(df_test$Day_of_week, LabelEncoder)
+```
+
+```{r}
+# função para a criação do label de classificação
+class_appliances  <- function(var) {
+  if (var<=60 ){
+    var = 1
+  }
+  else if (var > 60 & var <= 100){
+    var = 2
+  }
+  else if (var > 100 & var <= 500){
+    var = 3
+  }
+  else if (var > 500){
+    var = 4
+  }
+  
+} 
+# Crio a variável taget de classificação
+# No de treino eu deixo junto ao DataFrame em uma nova coluna para o teste eu so vou salvar em uma variável sozinha.
+
+df_train$AppliancesClass <- sapply(df_train$Appliances, class_appliances)
+test_label <- sapply(df_test$Appliances, class_appliances)
+
+# Imprimo a quantidade por classe
+bar_plot(df_train, 'AppliancesClass')
+```
+
+
+```{r}
+# Converto para factor a variável target adcionando os labels
+df_train$AppliancesClass <- factor(df_train$AppliancesClass,levels = c(1,2,3,4))
+test_label <- factor(test_label,levels = c(1,2,3,4))
+
+# Imprimo as categorias
+glimpse(df_train$AppliancesClass)
+glimpse(test_label)
+
+# Verifico se foi gerado algum valor nulo.
+sum(is.na(df_train))
+sum(is.na(df_test))
+
+# Retiro as colunas que não serão necessárias. 
+df_train$date <- NULL
+df_train$Appliances <- NULL
+df_test$date <- NULL
+df_test$Appliances <- NULL
+```
+
+```{r}
+# Normalizo os dados de treino e teste.
+
+names(df_train[,1:28])
+names(df_test[,1:28])
+
+df_train_norm <- as.data.frame(sapply(df_train[,1:28], normalize))
+df_test_norm <- as.data.frame(sapply(df_test[,1:28], normalize))
+
+# Adciono novamente as outra variáveis
+train <- cbind(df_train_norm, df_train[,29:35])
+test <- cbind(df_test_norm, df_test[,29:34])
+```
+
+```{r}
+# Uso o RandomForest para a seleção de variáveis
+
+bets_var <- randomForest(AppliancesClass  ~ . ,data = train, 
+                            ntree = 100, nodesize = 10, importance = T)
+
+varImpPlot(bets_var_RF)
+```
+
+```{r}
+# Podemos notar que pouca coisa mudou com relação a impotência então irei utilizar as mesmas variáveis nos modelos de regressão. 
+var_train <- c('AppliancesClass','T2','NSM','lights', 'RH_6','RH_out','Tdewpoint','Day','Hour')
+var_test <- c('T2','NSM','lights', 'RH_6','RH_out','Tdewpoint','Day','Hour')
+train <- train[var_train]
+test <- test[var_test]
+```
+
+```{r}
+# Modelo  com o KSVM 
+#??KSVM
+modelo_SVM <- ksvm(AppliancesClass ~ .
+                  ,data= train,type="C-bsvc", kernel = "rbfdot")
+
+previsao_SVM <- predict(modelo_SVM, test)
+
+confusionMatrix(previsao_SVM,test_label)
+```
+
+```{r}
+# Modelo  com o RandomForest 
+#?randomForest
+modelo_RF <- randomForest(AppliancesClass ~ .
+                   ,data= train,ntree = 500,
+                   nodesize = 10,method="repeatedcv",
+                   number=15, repeats=200)
+
+previsao_RF <- predict(modelo_RF, test)
+
+confusionMatrix(previsao_RF,test_label)
+```
+
+```{r}
+# Modelo  com o naiveBayes
+modelo_NB <- naiveBayes(AppliancesClass ~ .
+                  ,data= train,laplace=3)
+
+previsao_NB <- predict(modelo_NB, test)
+
+confusionMatrix(previsao_NB,test_label)
+```
+
+```{r}
+#  Modelo com o xgboost
+# Para o modelo tenho que converter o DF para uma matrix.
+trainData  <- as.matrix(train[2:9])
+trainLabel <-  as.integer(train$AppliancesClass)-1 
+dtrain <- xgb.DMatrix(data = trainData, label = trainLabel )
+
+testData <- as.matrix(test[1:8])
+testLabel <- as.numeric(test_label)
+dtest <- xgb.DMatrix(data = testData, label = testLabel )
+
+num_class <- length(unique(trainLabel))
+
+xgb_params <- list(objective="multi:softprob",nfold = 100,max_depth = 6,
+                   eval_metric="mlogloss",num_class=num_class,early.stop.round = 10)
+# ?xgboost
+modelo_XB <- xgb.train(params = xgb_params,
+                     data = dtrain,
+                     nrounds = 5000,
+                     prediction = TRUE,
+                     verbose = FALSE
+)
+
+
+previsao_XB <- predict(modelo_XB,testData,reshape = T)
+
+previsao_XB_label <- factor(max.col(previsao_XB),levels=1:4)
+
+confusionMatrix(previsao_XB_label,test_label)
+
+```
+
+
+
+## Considerações Finais
+Como podemos ver conseguimos uma melhora significante principalmente para o xgboost para esse problema de classificação, atingindo quase 80% de acurácia, porém, ainda não é o ideal, sobretudo com a pouca quantidade de dados como já mencionados, dificulta atingir melhores resultados, se tivesse mais dados o modelo muito provavelmente iria perfumar melhor.
+ 
+Temos então agora duas soluções para o problema de negócio, podendo aplicar aquela que e encaixe melhor a necessidade.  
+
+### Obrigado! Entre em contato comigo acessando meu portifolio (https://campos1989.github.io/) no menu contato!
+
